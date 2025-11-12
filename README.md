@@ -258,12 +258,11 @@ make run
 - **Synthetic Data**: Default uses Synthea (realistic but not real patients)
 - **Historical Trials**: Based on public trials from ClinicalTrials.gov
 - **Text Matching**: Conditions matched by text (not standardized codes)
-- **Active Conditions**: Assumes `stop_date IS NULL` means condition is active
 - **Single Institution**: Designed for single-site (can extend to multi-site)
 
 ## Roadmap
 
-- [ ] Multi-site feasibility analysis
+- [ ] Finish off the pending modules
 - [ ] Advanced ML-based patient prioritization
 - [ ] Real-time AACT database updates
 - [ ] Geographic analysis (patient locations vs trial sites)
