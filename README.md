@@ -9,7 +9,7 @@ Input: "Design a Phase 2 diabetes trial with 80 patients"
 Output: Trial design recommendations + eligibility criteria + list of 80 eligible patients to recruit
 
 **Core Value:**
-Combines historical clinical trial knowledge (10K+ trials) with local patient databases to provide comprehensive trial feasibility analysis in seconds, not weeks.
+Combines historical clinical trial knowledge (45K trials from AACT database) with local patient databases to provide comprehensive trial feasibility analysis in seconds, not weeks.
 
 ## Architecture
 
@@ -30,8 +30,8 @@ Combines historical clinical trial knowledge (10K+ trials) with local patient da
         ▼                   ▼
   ┌──────────┐        ┌──────────┐
   │ ChromaDB │        │Postgres  │
-  │ (Trials) │        │(Patients)│
-  │ ~10K     │        │Pluggable │
+  │ (AACT)   │        │(Synthea) │
+  │ ~45K     │        │Pluggable │
   └──────────┘        └──────────┘
 ```
 
@@ -50,8 +50,9 @@ Combines historical clinical trial knowledge (10K+ trials) with local patient da
 
 ## Key Features
 
-- **Historical Trial Analysis**: Learn from 10K+ completed clinical trials
+- **Historical Trial Analysis**: Learn from 45K+ clinical trials (AACT database)
 - **Patient Recruitment**: Identify eligible patients from your database
+- **Synthetic Patient Cohorts**: Default Synthea database with realistic patient populations
 - **Semantic Search**: Vector-based similarity matching using ChromaDB
 - **LLM-Powered Design**: Generate appropriate eligibility criteria
 - **Local Deployment**: Docker-based for data sovereignty (HIPAA-friendly)
@@ -100,8 +101,8 @@ docker-compose logs -f mcp-server
 ```
 
 The server will:
-- Initialize PostgreSQL with Synthea patient data
-- Load 10K+ clinical trials into ChromaDB
+- Initialize PostgreSQL with Synthea synthetic patient cohorts
+- Load 45K clinical trials from AACT database into ChromaDB
 - Start MCP server on port 8000
 
 ### Option 2: Local Development
@@ -157,17 +158,23 @@ Server Response:
 
 ## Data Sources
 
-### Clinical Trials Database
-- **Source**: AACT Database (ClinicalTrials.gov)
-- **Size**: ~10,000 trials
-- **Storage**: ChromaDB (vector embeddings)
-- **Search**: Semantic similarity using Google Gemini embeddings
+### Clinical Trials Database (AACT)
+- **Source**: AACT Database (Aggregate Analysis of ClinicalTrials.gov)
+- **Dataset**: 45,000 clinical trial records
+- **Content**: Trial protocols, eligibility criteria, outcomes, enrollment data
+- **Storage**: ChromaDB (vector embeddings for semantic search)
+- **Search**: Semantic similarity using Google Gemini embeddings (gemini-embedding-001)
+- **Coverage**: Multi-phase trials across various therapeutic areas
 
-### Patient Database
-- **Default**: Synthea synthetic patient data
-- **Pluggable**: Connect your own PostgreSQL database
-- **Schema**: Demographics + Conditions (see docs/DATABASE_SCHEMA.md)
-- **Privacy**: All data stays local in Docker
+### Patient Database (Synthea)
+- **Source**: Synthea - Synthetic Patient Population Simulator
+- **Dataset**: Sample of synthetic patient cohorts with realistic medical histories
+- **Content**: Patient demographics, conditions, medications, observations, encounters
+- **Storage**: PostgreSQL (relational database)
+- **Schema**: Demographics + Conditions tables (see docs/DATABASE_SCHEMA.md)
+- **Privacy**: 100% synthetic data - no real patient information
+- **Pluggable**: Easily replace with your institution's actual patient database
+- **Use Cases**: Testing, demos, development, and training without PHI concerns
 
 ## Documentation
 
