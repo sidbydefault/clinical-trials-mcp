@@ -3,8 +3,9 @@ import pandas as pd
 import os
 from dotenv import load_dotenv
 import sys
+import json
 from pathlib import Path
-from models import Patient, PatientCondition
+from models import Patient, PatientCondition, AACTTrial
 
 load_dotenv()
 DATA_DIR=Path(r'D:\clinical-trials-mcp\data\raw')
@@ -121,18 +122,76 @@ def load_conditions(filepath: str, batch_size: int = 1000):
     print(f"Added {added} patient conditions. Skipped {skipped} duplicate entries.{patients_not_found} patients not found.")
     return
 
+def load_trials(filepath: str, batch_size: int = 1000):
+    """Load clinical trials from JSON file"""
+    if not os.path.exists(filepath):
+        raise FileNotFoundError(f"Clinical trials file not found: {filepath}")
+    
+    # Read JSON file
+    with open(filepath, 'r',encoding='utf-8') as f:
+        data = json.load(f)
+    
+    print(f"Total trials to load: {len(data)}")
+    
+    engine = get_engine()
+    with Session(engine) as session:
+        added = 0
+        skipped = 0
+        
+        for i, (nct_id, content) in enumerate(data.items()):
+            # Extract text from document field
+            text = content.get('document', '')
+            
+            # Extract conditions from metadata
+            metadata = content.get('metadata', {})
+            conds_count = metadata.get('conditions_count', 0)
+            conditions = []
+            
+            for j in range(conds_count):
+                condition = metadata.get(f'condition_{j+1}', '')
+                if condition:
+                    conditions.append(condition)
+            
+            # Convert conditions list to comma-separated string
+            conditions_str = ', '.join(conditions)
+            
+            trial = AACTTrial(
+                nct_id=nct_id,
+                text=text,
+                conditions=conditions_str
+            )
+            session.add(trial)
+            
+            try:
+                session.commit()
+                added += 1
+            except Exception as e:
+                session.rollback()
+                skipped += 1
+                if added == 0 and skipped == 1:
+                    print(f"   Error on first record: {e}")
 
+            if (i + 1) % batch_size == 0:
+                print(f"  Processed {i + 1}/{len(data)} trials...")
+                session.commit()
+
+        session.commit()
+
+    print(f"Added {added} trials. Skipped {skipped} duplicate entries.")
+    return added, skipped
 
 if __name__ == "__main__":
-    if len(sys.argv) != 3:
+    if len(sys.argv) != 4:
         print("Usage: python database_init_simple.py <demographics.parquet> <conditions.parquet>")
         sys.exit(1)
     
     demographics_filename = sys.argv[1]
     conditions_filename = sys.argv[2]
-    
+    clincal_trails_filename = sys.argv[3]
     demographics = os.path.join(DATA_DIR,demographics_filename)
     conditions = os.path.join(DATA_DIR,conditions_filename)
+    clinical_trails = os.path.join(DATA_DIR,clincal_trails_filename)
+
     print("Dropping existing tables if any...")
     drop_tables()
 
@@ -144,6 +203,9 @@ if __name__ == "__main__":
     
     print(f"Loading conditions from {conditions}...")
     load_conditions(conditions,batch_size=1000)
+
+    print(f"Loading clinical trials from {clinical_trails}...")
+    load_trials(clinical_trails,batch_size=1000)
     
     print("\nDone!")
 

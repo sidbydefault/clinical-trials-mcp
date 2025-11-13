@@ -33,3 +33,11 @@ class PatientCondition(SQLModel, table=True):
     conditions: str = Field(index=True)
     
     patient: Optional[Patient] = Relationship(back_populates="conditions")
+
+
+class AACTTrial(SQLModel, table=True):
+    """AACT Clinical Trials table"""
+    __tablename__ = "aact_clinical_trials"
+    nct_id: str = Field(primary_key=True, index=True)
+    text: str
+    conditions: str
