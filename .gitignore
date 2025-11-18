@@ -34,11 +34,11 @@ ENV/
 *~
 
 # Data directories
-data/
-*.parquet
-*.csv
-*.db
-*.sqlite
+# data/
+# *.parquet
+# *.csv
+# *.db
+# *.sqlite
 
 # Environment variables
 .env
