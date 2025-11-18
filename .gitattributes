@@ -1,2 +1,4 @@
+*.json filter=lfs diff=lfs merge=lfs -text
+*.db filter=lfs diff=lfs merge=lfs -text
 data/raw/clinical_documents_with_metadata_final.json filter=lfs diff=lfs merge=lfs -text
 data/vector_database/clincaldocs_milvus.db filter=lfs diff=lfs merge=lfs -text
