@@ -1,156 +1,231 @@
-"""
-MCP server implementation for clinical trial matching.
-"""
+import statistics
+from typing import Optional,List,Dict
+from dotenv import load_dotenv 
 
-import logging
-from typing import Any, Dict, List
+from fastmcp import FastMCP 
+from fastmcp.tools.tool import ToolResult 
 
-from config import ensure_directories, get_settings
-from database import DatabaseManager
-from matching import TrialMatcher
-from vectorstore import VectorStoreManager
+load_dotenv()
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+mcp = FastMCP("clinical-trial-recommedation-mcp")
+
+def parse_conditions(cond):
+
+    if not cond:
+        return []
+    if isinstance(cond,str):
+        parts = [c.strip() for c in cond.split(",") if c.strip()]
+        return parts
+    else:
+        return []
+
+@mcp.tool(
+        name = "search_trials",
+        description="Search clinical trials using a query and optional filters.",
+        annotations={"readOnlyHint": True}
 )
-logger = logging.getLogger(__name__)
+def search_trials(
+    query: str,
+    top_k: int = 5,
+    phase: Optional[str] = None,
+    status: Optional[str] = None,
+    min_enrollment : Optional[int] = None
+):
+    from .vectorstore import get_vector_store
 
+    vs = get_vector_store()
+    trials = vs.search(
+        query=query,
+        top_k=top_k,
+        filters={"phase": phase, "status": status, "min_enrollment": min_enrollment}
+                if (phase or status or min_enrollment) else None,
+        enrich_from_db=True
+    )
+    return {
+        "query": query,
+        "filters": {"phase": phase, "status": status, "min_enrollment": min_enrollment},
+        "count": len(trials),
+        "trials": trials
+    }
 
-class ClinicalTrialsMCPServer:
-    """MCP server for clinical trial matching."""
+@mcp.tool(
+    name="find_eligible_patients",
+    description="Find patients by age range, gender, and required clinical conditions.",
+    annotations={"readOnlyHint": True}
+)
+def find_eligible_patients(
+    age_min: int,
+    age_max: int,
+    required_conditions: Optional[List[str]] = None,
+    limit: int = 100
+):
+    from .database import get_db 
 
-    def __init__(self):
-        """Initialize the MCP server."""
-        logger.info("Initializing Clinical Trials MCP Server...")
+    db = get_db()
+    patients = db.find_eligible_patients(
+        age_min=age_min,
+        age_max=age_max,
+        required_conditions=required_conditions,
+        limit=limit
+    )
+    summary = {
+        "total": len(patients),
+        "age": {},
+        "gender": {},
+        "race": {},
+        "ethnicity": {}
+    }
+    if patients:
+        ages = [p["age"] for p in patients]
+        summary["age"]["min"] = min(ages)
+        summary["age"]["max"] = max(ages)
+        summary["age"]["median"] = statistics.median(ages)
+        summary["age"]["mean"] = round(statistics.mean(ages), 1)
 
-        # Load settings
-        self.settings = get_settings()
-        ensure_directories()
+        for p in patients:
+            summary["gender"][p["gender"]] = summary["gender"].get(p["gender"], 0) + 1
+            summary["race"][p["race"]] = summary["race"].get(p["race"], 0) + 1
+            summary["ethnicity"][p["ethnicity"]] = summary["ethnicity"].get(p["ethnicity"], 0) + 1
 
-        # Initialize components
-        self.db_manager = DatabaseManager(self.settings.database_url)
-        self.vector_manager = VectorStoreManager(
-            persist_directory=self.settings.vector_store_path,
-            embedding_model=self.settings.embedding_model,
+    return {
+        "criteria": {
+            "age_min": age_min,
+            "age_max": age_max,
+            "required_conditions": required_conditions or []
+        },
+        "demographics_summary": summary,
+        "patients": patients
+    }
+    
+@mcp.tool(
+    name="analyze_trials_and_match_patients",
+    description="Infer eligibility criteria from top trials and find matching patients.",
+    annotations={"readOnlyHint": True}
+)
+def analyze_trials_and_match_patients(
+    query: str,
+    top_k_trials: int = 5,
+    max_patients: int = 200
+) -> ToolResult:
+    from src.vectorstore import get_vector_store
+    from src.database import get_db
+
+    vs = get_vector_store()
+    trials = vs.search(
+        query=query,
+        top_k=top_k_trials,
+        filters=None,
+        enrich_from_db=True
+    )
+
+    # Extract conditions
+    all_conditions = []
+    for t in trials:
+        conds = parse_conditions(t.get("conditions"))
+        t["conditions"] = conds
+        all_conditions.extend(conds)
+
+    # Dedupe in order
+    seen = set()
+    unique_conditions = [c for c in all_conditions if not (c in seen or seen.add(c))]
+
+    # Infer age
+    min_ages= []
+    max_ages= []
+    enrollments =[]
+    for t in trials:
+        mn = t.get("minimum_age")
+        mx = t.get("maximum_age")
+        en = t.get("enrollment")
+        try:
+            if mn not in (None, "", "NA"):
+                min_ages.append(int(float(mn)))
+        except:
+            pass
+        try:
+            if mx not in (None, "", "NA"):
+                max_ages.append(int(float(mx)))
+        except:
+            pass
+        try:
+            if en not in (None, "", "NA"):
+                enrollments.append(int(float(en)))
+        except:
+            pass
+
+    inferred_min_age = statistics.median(min_ages) if min_ages else None
+    inferred_max_age = statistics.median(max_ages) if max_ages else None
+    inferred_enrollment = statistics.median(enrollments) if enrollments else 100
+
+    # Fetch patients
+    patients = []
+    demographics = {}
+    if inferred_min_age is not None and inferred_max_age is not None:
+        db = get_db()
+        patients = db.find_eligible_patients(
+            age_min=int(inferred_min_age),
+            age_max=int(inferred_max_age),
+            required_conditions=unique_conditions,
+            limit=inferred_enrollment 
         )
-        self.matcher = TrialMatcher(self.db_manager, self.vector_manager)
 
-        logger.info("Server initialized successfully")
-
-    def get_patient_matches(
-        self,
-        patient_id: str,
-        top_k: int = 10,
-        min_similarity: float = 0.5,
-    ) -> List[Dict[str, Any]]:
-        """
-        Get matching trials for a patient.
-
-        Args:
-            patient_id: Patient identifier
-            top_k: Number of matches to return
-            min_similarity: Minimum similarity threshold
-
-        Returns:
-            List of trial matches
-        """
-        logger.info(f"Finding matches for patient {patient_id}")
-
-        matches = self.matcher.find_matching_trials(
-            patient_id=patient_id,
-            top_k=top_k,
-            min_similarity=min_similarity,
-        )
-
-        return [match.model_dump() for match in matches]
-
-    def search_trials(
-        self,
-        condition: str,
-        top_k: int = 10,
-    ) -> List[Dict[str, Any]]:
-        """
-        Search trials by condition.
-
-        Args:
-            condition: Condition name or description
-            top_k: Number of results
-
-        Returns:
-            List of matching trials
-        """
-        logger.info(f"Searching trials for condition: {condition}")
-
-        trials = self.matcher.search_trials_by_condition(
-            condition=condition,
-            top_k=top_k,
-        )
-
-        return trials
-
-    def get_patient_info(self, patient_id: str) -> Dict[str, Any]:
-        """
-        Get patient information.
-
-        Args:
-            patient_id: Patient identifier
-
-        Returns:
-            Patient data with conditions
-        """
-        patient = self.db_manager.get_patient(patient_id)
-        if not patient:
-            raise ValueError(f"Patient {patient_id} not found")
-
-        conditions = self.db_manager.get_patient_conditions(patient_id)
-
-        return {
-            "patient": patient,
-            "conditions": conditions,
+        # Build patient demographics summary
+        demographics = {
+            "total": len(patients),
+            "age": {},
+            "gender": {},
+            "race": {},
+            "ethnicity": {}
         }
 
-    def get_trial_details(self, trial_id: str) -> Dict[str, Any]:
-        """
-        Get trial details.
+        if patients:
+            ages = [p["age"] for p in patients]
+            demographics["age"]["min"] = min(ages)
+            demographics["age"]["max"] = max(ages)
+            demographics["age"]["median"] = statistics.median(ages)
+            demographics["age"]["mean"] = round(statistics.mean(ages), 1)
+            for p in patients:
+                demographics["gender"][p["gender"]] = demographics["gender"].get(p["gender"], 0) + 1
+                demographics["race"][p["race"]] = demographics["race"].get(p["race"], 0) + 1
+                demographics["ethnicity"][p["ethnicity"]] = demographics["ethnicity"].get(p["ethnicity"], 0) + 1
 
-        Args:
-            trial_id: Trial identifier
+        available_ratio = len(patients) / inferred_enrollment if inferred_enrollment > 0 else 0
+        feasibility = {
+            "target_enrollment": inferred_enrollment,
+            "available_patients": len(patients),
+            "availability_ratio": round(available_ratio, 2),
+            "feasibility_level": "HIGH" if available_ratio >= 1.5 else "MEDIUM" if available_ratio >= 1.0 else "LOW",
+            "recruitment_risk": "Minimal" if available_ratio >= 2.0 else "Moderate" if available_ratio >= 1.2 else "High"
+        }
 
-        Returns:
-            Trial data
-        """
-        trial = self.db_manager.get_trial(trial_id)
-        if not trial:
-            raise ValueError(f"Trial {trial_id} not found")
+    # Build structured result
+    result = {
+        "query": query,
+        "top_k_trials": top_k_trials,
+        "inferred_criteria": {
+            "conditions": unique_conditions,
+            "median_min_age": inferred_min_age,
+            "median_max_age": inferred_max_age,
+            "median enrollment":inferred_enrollment
+        },
+        "similar_trials": trials,
+        
+        "patient_recruitment":{
+            "demographics_summary":demographics,
+            "matched_patients": patients,
+            "feasibility": feasibility
+            }
+    }
 
-        return trial
-
-
-def main() -> None:
-    """Run the MCP server."""
-    logger.info("Starting Clinical Trials MCP Server...")
-
-    server = ClinicalTrialsMCPServer()
-
-    logger.info(
-        f"Server running on {server.settings.host}:{server.settings.port}"
+    # Build human-readable content
+    content = (
+        f"Found {len(trials)} trials. Inferred {len(unique_conditions)} conditions: "
+        f"{', '.join(unique_conditions)}. Age: {inferred_min_age}–{inferred_max_age}."
+        f"(feasibility: {feasibility.get('feasibility_level', 'UNKNOWN')})."
+        
     )
-    logger.info("Press Ctrl+C to stop")
 
-    # TODO: Implement MCP protocol handler
-    # For now, this is a basic setup
-    # In production, integrate with actual MCP framework
-
-    try:
-        # Keep server running
-        import time
-        while True:
-            time.sleep(1)
-    except KeyboardInterrupt:
-        logger.info("Server stopped")
+    return ToolResult(content=[content], structured_content=result)
 
 
-if __name__ == "__main__":
-    main()
+
