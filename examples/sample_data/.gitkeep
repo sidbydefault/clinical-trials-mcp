@@ -1,9 +1,0 @@
-# This directory contains sample/demo data files
-#
-# Expected files:
-# - patients_demo.parquet
-# - conditions_demo.parquet
-# - trials_demo.parquet
-#
-# These files should be generated separately using synthetic data generators
-# or obtained from appropriate data sources.
