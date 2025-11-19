@@ -1,34 +1,31 @@
-version: '3.8'
+version: "3.9"
 
 services:
-  clinical-trials-mcp:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    ports:
-      - "8000:8000"
-    volumes:
-      - ./data:/app/data
-      - ./src:/app/src
+  mcp-server:
+    build: .
+    container_name: mcp-server
+    runtime: nvidia
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     environment:
-      - DATABASE_URL=${DATABASE_URL:-sqlite:///data/clinical_trials.db}
-      - VECTOR_STORE_PATH=${VECTOR_STORE_PATH:-data/vector_store}
-      - LOG_LEVEL=${LOG_LEVEL:-INFO}
-    env_file:
-      - .env
+      PYTHONUNBUFFERED: 1
+      DATABASE_URL: postgresql://sid:sid_1234@172.17.0.1:5432/ctrialssynthpat
+      MILVUS_LOCALPATH: ${MILVUS_LOCALPATH}
+      MILVUS_COLLECTION_NAME: clincaldocs
+      ENABLE_SPARSE: ${ENABLE_SPARSE}
+      HYBRID_RANKER: ${HYBRID_RANKER}
+      EMBEDDING_MODEL_NAME: ${EMBEDDING_MODEL_NAME}
+      EMBEDDING_BATCH_SIZE: ${EMBEDDING_BATCH_SIZE}
+      EMBEDDING_DIMENSION: ${EMBEDDING_DIMENSION}
+    volumes:
+      - /mnt/clinical-trials-mcp/data/vector_database:/mnt/clinical-trials-mcp/data/vector_database
+      - /mnt/models:/mnt/models
+    ports:
+      - "8080:8080"
+    command: ["uv", "run", "python", "run_server.py"]
     restart: unless-stopped
-
-  # Optional: PostgreSQL database
-  # postgres:
-  #   image: postgres:15-alpine
-  #   environment:
-  #     POSTGRES_DB: clinical_trials
-  #     POSTGRES_USER: ${POSTGRES_USER:-postgres}
-  #     POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
-  #   ports:
-  #     - "5432:5432"
-  #   volumes:
-  #     - postgres_data:/var/lib/postgresql/data
-
-# volumes:
-#   postgres_data:
