@@ -242,7 +242,7 @@ The system is designed to be **pluggable**. To use your institutional database:
    docker-compose restart mcp-server
    ```
 
-See [docs/PLUGGING_YOUR_DB.md](docs/PLUGGING_YOUR_DB.md) for detailed instructions.
+See [docs/DATABASE_SCHEMA.md](docs/DATABASE_SCHEMA.md) for the database schema details.
 
 ---
 
@@ -321,9 +321,8 @@ python src/run_server.py
 ## Support
 
 For questions and issues:
-1. Check documentation in `docs/`
-2. Review [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
-3. Open an issue on GitHub
+1. Check documentation in `docs/` ([DATABASE_SCHEMA.md](docs/DATABASE_SCHEMA.md), [VECTOR_STORE_SCHEMA.md](docs/VECTOR_STORE_SCHEMA.md))
+2. Open an issue on GitHub
 
 ---
 
