@@ -294,11 +294,9 @@ python src/run_server.py
 
 ## Roadmap
 
-- [ ] Advanced ML-based patient prioritization
+- [ ] Add Evaluations for Hybrid RAG
 - [ ] Real-time AACT database updates
-- [ ] Geographic analysis (patient locations vs trial sites)
-- [ ] Cost estimation and budget analysis
-- [ ] Multi-site trial support
+
 
 ---
 
@@ -314,3 +312,4 @@ For questions and issues:
 ## License
 
 MIT
+
