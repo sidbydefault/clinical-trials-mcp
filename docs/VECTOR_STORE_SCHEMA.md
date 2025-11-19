@@ -1,165 +1,228 @@
 # Vector Store Schema
 
-This document describes the vector store schema used for semantic search and trial matching.
+This document describes the Milvus vector store used for semantic search of clinical trials.
 
 ## Overview
 
-The vector store uses ChromaDB to enable semantic search of clinical trials based on:
-- Trial descriptions and purposes
-- Inclusion and exclusion criteria
-- Medical conditions being studied
+The vector store uses **Milvus** (local persistent database) for hybrid semantic search combining:
+- **Dense vector embeddings** for semantic similarity
+- **Sparse BM25 embeddings** for keyword matching
+- **RRF (Reciprocal Rank Fusion)** for hybrid ranking
 
-## Collections
+## Vector Store Configuration
 
-### trial_embeddings
+### Database Location
+- **Type**: Milvus (local persistent file)
+- **Default path**: Configured in `src/config.py` via `MILVUS_LOCALPATH`
+- **Collection name**: `clincaldocs`
 
-Primary collection for clinical trial semantic search.
+### Embedding Model
 
-#### Metadata Schema
+**Model**: `Qwen/Qwen3-Embedding-4B`
+- **Dimensions**: 2560
+- **Device**: CUDA (GPU-accelerated)
+- **Batch size**: 1 (for stability during indexing)
+- **Provider**: HuggingFace Transformers
 
-Each vector embedding includes the following metadata:
+This is a high-quality multilingual embedding model optimized for semantic understanding of clinical text.
 
-| Field | Type | Description |
-|-------|------|-------------|
-| trial_id | string | NCT number or unique trial identifier |
-| title | string | Trial title |
-| phase | string | Trial phase (Phase I, II, III, IV) |
-| status | string | Trial status (recruiting, active, etc.) |
-| conditions | string[] | List of conditions studied |
-| min_age | int | Minimum age requirement |
-| max_age | int | Maximum age requirement |
-| eligible_genders | string | Eligible genders |
-| locations | string[] | Trial locations |
-| embedding_type | string | Type of text embedded (description, criteria, combined) |
+### Hybrid Search Configuration
 
-#### Document Types
+- **Dense embeddings**: Qwen3-Embedding-4B (2560-dim vectors)
+- **Sparse embeddings**: BM25 built-in function (keyword matching)
+- **Hybrid ranker**: RRFRanker (Reciprocal Rank Fusion)
+- **Enable sparse**: True
 
-Three types of documents are embedded per trial:
+## Data Structure
 
-1. **Description Embedding**
-   - Source: `title + description`
-   - Purpose: General trial overview matching
-   - embedding_type: "description"
+### Document Format
 
-2. **Criteria Embedding**
-   - Source: `inclusion_criteria + exclusion_criteria`
-   - Purpose: Detailed eligibility matching
-   - embedding_type: "criteria"
+Each clinical trial document is chunked and embedded with the following structure:
 
-3. **Combined Embedding**
-   - Source: All text fields combined
-   - Purpose: Comprehensive semantic search
-   - embedding_type: "combined"
-
-### condition_embeddings
-
-Secondary collection for medical condition semantic search.
-
-#### Metadata Schema
-
-| Field | Type | Description |
-|-------|------|-------------|
-| condition_code | string | Medical condition code |
-| condition_name | string | Human-readable condition name |
-| synonyms | string[] | Alternative names/terms |
-| category | string | Condition category |
-
-## Embedding Model
-
-**Default Model**: `all-MiniLM-L6-v2`
-- Dimensions: 384
-- Max sequence length: 256 tokens
-- Optimized for: Speed and efficiency
-
-**Alternative Models** (configurable):
-- `all-mpnet-base-v2`: Higher quality, 768 dimensions
-- `multi-qa-MiniLM-L6-cos-v1`: Optimized for Q&A tasks
-
-## Query Strategies
-
-### 1. Patient-to-Trial Matching
-
-**Input**: Patient demographics + conditions
-**Process**:
-1. Construct patient profile text
-2. Generate embedding
-3. Search trial_embeddings collection
-4. Filter by demographic criteria (age, gender, location)
-5. Rank by semantic similarity
-
-**Query Example**:
+**Text Nodes:**
 ```python
-query_text = f"""
-Patient: {age} year old {gender}
-Conditions: {', '.join(conditions)}
-Location: {state}
-"""
-results = collection.query(
-    query_texts=[query_text],
-    n_results=10,
-    where={
-        "status": "recruiting",
-        "min_age": {"$lte": age},
-        "max_age": {"$gte": age}
-    }
+TextNode(
+    text=chunk["text"],              # Chunked trial text
+    metadata={                        # Trial metadata
+        "nct_id": "NCT12345678",     # Trial identifier
+        "chunk_index": 0,             # Chunk sequence number
+        # ... additional metadata fields
+    },
+    id_="{nct_id}_chunk_{index}"     # Unique node ID
 )
 ```
 
-### 2. Condition-Based Search
+**Metadata Fields:**
+- `nct_id`: NCT trial identifier
+- `chunk_index`: Sequential chunk number within trial
+- Condition metadata excluded from embeddings (configured via `excluded_embed_metadata`)
+- Additional trial metadata from source JSON
 
-**Input**: Condition name or description
-**Process**:
-1. Normalize condition text
-2. Search condition_embeddings for matches
-3. Use matched condition codes for trial search
+### Chunking Strategy
 
-### 3. Hybrid Search
+**Parameters:**
+- **Max chunk length**: 4096 characters
+- **Chunker**: `ClinicalTrialChunker` (custom implementation)
+- **Document sampling**: 10,000 trials from full dataset (~45,000 total)
+- **Random seed**: 42 (for reproducible sampling)
 
-Combines vector similarity with traditional filters:
-- Vector similarity: Top-k candidates
-- Metadata filters: Age, gender, status, location
-- Re-ranking: Combined score
+**Process:**
+1. Parse clinical trial document using custom chunker
+2. Split into chunks of max 4096 characters
+3. Preserve metadata across all chunks
+4. Assign unique chunk IDs: `{nct_id}_chunk_{index}`
 
-## Distance Metrics
+## Indexing Pipeline
 
-**Primary**: Cosine similarity
-- Range: [0, 1] (0 = identical, 1 = opposite)
-- Threshold: 0.7 for high-confidence matches
+The vector database is created using `database_creation/create_vectordb.py`:
 
-**Secondary**: L2 (Euclidean) distance
-- Used for clustering and analysis
+### Step 1: Create Text Nodes
+- Load clinical trials from JSON file
+- Sample 10,000 documents
+- Parse and chunk each document
+- Extract and attach metadata
+- Create TextNode objects
 
-## Indexing Strategy
+### Step 2: Parallel Embedding Generation
+- **Multi-GPU processing** across available GPUs (e.g., GPUs 1-7)
+- **Shard distribution**: Documents split across GPUs
+- **Model per GPU**: Each GPU loads its own embedding model
+- **Batch processing**: 1 embedding at a time for memory stability
+- **Memory management**: Periodic CUDA cache clearing every 10 embeddings
+- **Error handling**: Skip OOM chunks, continue processing
 
-1. **Initial Load**: Bulk insert all trials
-2. **Updates**: Incremental adds/updates
-3. **Refresh**: Full re-index weekly (optional)
+**Parallel Processing:**
+```python
+# Documents sharded across N GPUs
+shards = [nodes[i::num_gpus] for i in range(num_gpus)]
 
-## Performance Considerations
+# Each worker processes one shard on one GPU
+for shard, gpu_id in zip(shards, device_ids):
+    embed_on_gpu(shard, gpu_id)
+```
 
-- **Collection size**: ~10,000 trials → ~30,000 embeddings
-- **Query latency**: <100ms for top-10 results
-- **Memory usage**: ~200MB for embeddings + index
-- **Batch size**: 100 documents per indexing batch
+### Step 3: Write to Milvus
+- **Single-process writing** to avoid conflicts
+- **Batch size**: 1000 vectors per write
+- **Collection settings**:
+  - Dimension: 2560
+  - Enable sparse: True
+  - Sparse function: BM25BuiltInFunction
+  - Hybrid ranker: RRFRanker
+  - Overwrite: False (append mode)
+
+## Query Interface
+
+### Runtime Configuration
+
+At runtime (`src/vectorstore.py`), the vector store provides:
+
+- **Connection**: Persistent Milvus database
+- **Embedding model**: HuggingFaceEmbedding (Qwen3-Embedding-4B)
+- **Index**: LlamaIndex VectorStoreIndex
+- **Search mode**: Hybrid (dense + sparse)
+
+### Query Process
+
+1. **User query** → Embed using Qwen3-Embedding-4B
+2. **Dense search** → Semantic similarity in 2560-dim space
+3. **Sparse search** → BM25 keyword matching
+4. **Hybrid ranking** → RRF combines both scores
+5. **Return results** → Ranked trial chunks with metadata
+
+### Similarity Metrics
+
+**Dense vectors:**
+- **Metric**: Cosine similarity
+- **Range**: [-1, 1] (higher = more similar)
+
+**Hybrid ranking:**
+- **Method**: Reciprocal Rank Fusion (RRF)
+- **Combines**: Dense vector similarity + BM25 keyword scores
+- **Output**: Unified relevance ranking
+
+## Performance Characteristics
+
+### Indexing
+- **Sample size**: 10,000 clinical trials
+- **Total chunks**: ~10,000+ (varies by document length)
+- **Embedding speed**: Dependent on GPU count and model
+- **Memory per GPU**: ~2-4GB for model + embeddings
+
+### Querying
+- **Index type**: HNSW (approximate nearest neighbor)
+- **Query latency**: <100ms typical for top-k results
+- **Accuracy**: High (dense + sparse hybrid)
 
 ## Data Flow
 
 ```
-Clinical Trial Data (Database)
+Clinical Trial JSON
         ↓
-Text Preprocessing
+Chunking (max 4096 chars)
         ↓
-Embedding Generation (Sentence Transformers)
+Text Nodes with Metadata
         ↓
-Vector Store (ChromaDB)
+Multi-GPU Parallel Embedding
         ↓
-Semantic Search
+Milvus Vector Store
+   (Dense + Sparse)
         ↓
-Filtered & Ranked Results
+Hybrid Search (RRF)
+        ↓
+Ranked Results
+```
+
+## Configuration Files
+
+**Vector store config** (`src/config.py`):
+```python
+class VectorStoreConfig:
+    MILVUS_LOCALPATH: str          # Path to Milvus database
+    COLLECTION_NAME: str           # "clincaldocs"
+    EMBEDDING_DIM: int            # 2560
+    ENABLE_SPARSE: bool           # True
+    HYBRID_RANKER: str            # "RRFRanker"
+```
+
+**Embedding config** (`src/config.py`):
+```python
+class EmbeddingConfig:
+    MODEL_NAME: str               # "Qwen/Qwen3-Embedding-4B"
+    DEVICE: str                   # "cuda:0"
+    EMBED_BATCH_SIZE: int        # 1
 ```
 
 ## Maintenance
 
-- **Rebuild index**: When changing embedding models
-- **Update embeddings**: When trial data changes significantly
-- **Monitor quality**: Track relevance scores and user feedback
+### Rebuilding the Index
+
+To rebuild the vector store from scratch:
+
+```bash
+cd database_creation
+python create_vectordb.py
+```
+
+**Note:** Update hardcoded paths in the script:
+- `MILVUS_DB_PATH`: Output database location
+- JSON input file path
+- GPU device IDs
+
+### Updating Embeddings
+
+To add new trials without rebuilding:
+- Set `overwrite=False` in MilvusVectorStore initialization
+- Run embedding pipeline on new trials only
+- Vectors will be appended to existing collection
+
+## Integration
+
+The vector store integrates with the MCP server through `src/vectorstore.py`:
+
+- **Initialization**: Loads persistent Milvus database on startup
+- **Query interface**: Exposes semantic search via LlamaIndex
+- **Caching**: Singleton pattern for model/index reuse
+- **Error handling**: Graceful fallback if vector store unavailable
+
+See `src/vectorstore.py` for the complete runtime implementation.

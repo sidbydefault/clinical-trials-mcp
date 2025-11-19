@@ -1,94 +1,143 @@
 # Database Schema
 
-This document describes the database schema for the Clinical Trials MCP system.
+This document describes the PostgreSQL database schema for the Clinical Trials MCP system.
+
+## Overview
+
+The database uses PostgreSQL with SQLModel/SQLAlchemy for ORM. It stores patient demographics, medical conditions, and clinical trial information.
 
 ## Tables
 
-### patients
+### patients_demographics
 
-Stores patient demographic information.
+Stores patient demographic information from Synthea synthetic data.
 
-| Column | Type | Description |
-|--------|------|-------------|
-| patient_id | VARCHAR(50) PRIMARY KEY | Unique patient identifier |
-| age | INTEGER | Patient age in years |
-| gender | VARCHAR(20) | Patient gender |
-| race | VARCHAR(50) | Patient race/ethnicity |
-| state | VARCHAR(2) | Two-letter state code |
-| zip_code | VARCHAR(10) | ZIP/postal code |
-| created_at | TIMESTAMP | Record creation timestamp |
-| updated_at | TIMESTAMP | Last update timestamp |
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| patient_id | VARCHAR | PRIMARY KEY, INDEX | Unique patient identifier |
+| gender | VARCHAR | NOT NULL | Patient gender |
+| age | INTEGER | NOT NULL, INDEX | Patient age in years |
+| name | VARCHAR | NOT NULL | Patient full name |
+| marital | VARCHAR | NOT NULL | Marital status |
+| race | VARCHAR | NOT NULL | Patient race |
+| ethnicity | VARCHAR | NOT NULL | Patient ethnicity |
+| ssn | VARCHAR | NOT NULL | Social security number |
+| address | VARCHAR | NOT NULL | Patient address |
 
-### conditions
+**Indexes:**
+- Primary key on `patient_id`
+- Index on `age` for age-based queries
 
-Stores patient medical conditions.
+**Relationships:**
+- One-to-many with `patients_conditions`
 
-| Column | Type | Description |
-|--------|------|-------------|
-| condition_id | VARCHAR(50) PRIMARY KEY | Unique condition record identifier |
-| patient_id | VARCHAR(50) FOREIGN KEY | References patients(patient_id) |
-| condition_code | VARCHAR(20) | Medical condition code (ICD-10, SNOMED, etc.) |
-| condition_name | VARCHAR(255) | Human-readable condition name |
-| onset_date | DATE | Date condition was diagnosed/onset |
-| status | VARCHAR(20) | Current status (active, resolved, etc.) |
-| severity | VARCHAR(20) | Condition severity (mild, moderate, severe) |
-| created_at | TIMESTAMP | Record creation timestamp |
+### patients_conditions
 
-### clinical_trials
+Stores patient medical conditions with a many-to-one relationship to patients.
 
-Stores clinical trial information and eligibility criteria.
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | INTEGER | PRIMARY KEY | Auto-incrementing condition record ID |
+| patient_id | VARCHAR | FOREIGN KEY, INDEX | References `patients_demographics(patient_id)` |
+| conditions | VARCHAR | NOT NULL, INDEX | Medical condition description |
 
-| Column | Type | Description |
-|--------|------|-------------|
-| trial_id | VARCHAR(50) PRIMARY KEY | Unique trial identifier (NCT number) |
-| title | TEXT | Trial title |
-| description | TEXT | Brief trial description |
-| phase | VARCHAR(20) | Trial phase (Phase I, II, III, IV) |
-| status | VARCHAR(50) | Trial status (recruiting, active, completed) |
-| sponsor | VARCHAR(255) | Trial sponsor organization |
-| conditions_studied | TEXT | Conditions being studied (JSON array) |
-| min_age | INTEGER | Minimum age requirement (years) |
-| max_age | INTEGER | Maximum age requirement (years) |
-| eligible_genders | VARCHAR(50) | Eligible genders (all, male, female) |
-| inclusion_criteria | TEXT | Inclusion criteria (full text) |
-| exclusion_criteria | TEXT | Exclusion criteria (full text) |
-| locations | TEXT | Trial locations (JSON array) |
-| start_date | DATE | Trial start date |
-| completion_date | DATE | Expected/actual completion date |
-| created_at | TIMESTAMP | Record creation timestamp |
-| updated_at | TIMESTAMP | Last update timestamp |
+**Indexes:**
+- Primary key on `id`
+- Foreign key index on `patient_id`
+- Index on `conditions` for condition lookups
 
-## Indexes
+**Relationships:**
+- Many-to-one with `patients_demographics` via `patient_id`
 
-### patients
-- `idx_patients_age` on `age`
-- `idx_patients_state` on `state`
-- `idx_patients_gender` on `gender`
+### aact_clinical_trials
 
-### conditions
-- `idx_conditions_patient` on `patient_id`
-- `idx_conditions_code` on `condition_code`
-- `idx_conditions_status` on `status`
+Stores AACT (Aggregate Analysis of ClinicalTrials.gov) clinical trial data.
 
-### clinical_trials
-- `idx_trials_status` on `status`
-- `idx_trials_phase` on `phase`
-- `idx_trials_conditions` on `conditions_studied` (GIN/JSONB for PostgreSQL)
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| nct_id | VARCHAR | PRIMARY KEY, INDEX | NCT identifier (e.g., NCT12345678) |
+| text | TEXT | NOT NULL | Full clinical trial document text |
+| conditions | VARCHAR | NOT NULL | Comma-separated list of conditions studied |
 
-## Relationships
+**Indexes:**
+- Primary key on `nct_id`
 
+**Notes:**
+- The `text` field contains the complete trial documentation including eligibility criteria, study design, outcomes, etc.
+- The `conditions` field is extracted from trial metadata and stored as a comma-separated string
+
+## Data Loading Process
+
+The database is initialized using `database_creation/create_db.py`:
+
+1. **Drop existing tables** (if any)
+2. **Create fresh tables** using SQLModel metadata
+3. **Load patient demographics** from Parquet file
+   - Batch size: 1000 records
+   - Duplicate entries are skipped
+4. **Load patient conditions** from Parquet file
+   - Batch size: 1000 records
+   - Validates patient existence via foreign key
+   - Skips conditions for non-existent patients
+5. **Load clinical trials** from JSON file
+   - Batch size: 1000 records
+   - Parses metadata to extract conditions
+   - Stores full document text
+
+## Configuration
+
+Database connection is configured via environment variable:
+
+```bash
+DATABASE_URL=postgresql://user:password@host:port/database
 ```
-patients (1) ----< (many) conditions
+
+Set this in your `.env` file before running the database creation script.
+
+## Usage
+
+### Creating the Database
+
+```bash
+cd database_creation
+python create_db.py demographics.parquet conditions.parquet clinical_trials.json
 ```
 
-Clinical trials are matched to patients based on:
-- Demographics (age, gender, location)
-- Medical conditions
-- Eligibility criteria (via vector similarity search)
+### Sample Queries
 
-## Notes
+**Find patient by ID:**
+```sql
+SELECT * FROM patients_demographics WHERE patient_id = 'patient-123';
+```
 
-- All timestamps use UTC
-- JSON fields are stored as TEXT in SQLite, JSONB in PostgreSQL
-- Patient data is synthetic and for demonstration purposes only
-- Trial data should be sourced from ClinicalTrials.gov or similar registries
+**Get all conditions for a patient:**
+```sql
+SELECT c.conditions
+FROM patients_conditions c
+WHERE c.patient_id = 'patient-123';
+```
+
+**Find trials by condition:**
+```sql
+SELECT nct_id, conditions
+FROM aact_clinical_trials
+WHERE conditions LIKE '%diabetes%';
+```
+
+**Patient demographics with conditions (JOIN):**
+```sql
+SELECT p.patient_id, p.name, p.age, c.conditions
+FROM patients_demographics p
+LEFT JOIN patients_conditions c ON p.patient_id = c.patient_id;
+```
+
+## Runtime Integration
+
+The database is accessed at runtime through `src/database.py`, which provides:
+
+- **Connection pooling** via SQLModel engine
+- **Patient matching** using semantic similarity of conditions
+- **Embedding cache** for condition embeddings (GTE-Multilingual model)
+- **Cosine similarity scoring** with 0.75 threshold for matching
+
+See `src/database.py` for the full database interface implementation.
