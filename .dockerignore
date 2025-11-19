@@ -1,0 +1,15 @@
+__pycache__
+*.pyc
+*.pyo
+.Python
+*.egg-info
+.git
+.env
+.venv
+venv/
+*.log
+.DS_Store
+notebooks/
+*.ipynb
+data/postgres
+data/milvus
