@@ -109,9 +109,15 @@ docker-compose logs -f mcp-server
 
 ## Connecting to Claude Desktop
 
+**Prerequisites:**
+- **Claude Pro subscription** (required for MCP server support)
+- **Claude Desktop app** installed on your computer
+
 **Claude Desktop requires HTTPS.** We need to use **ngrok** to get a free HTTPS URL.
 
-### Setup ngrok on GCP Server
+---
+
+### Step 1: Setup ngrok on GCP Server
 
 **1. On your GCP server, install ngrok:**
 
@@ -145,20 +151,32 @@ Forwarding   https://abc123-xy.ngrok-free.app -> http://localhost:8080
 
 **4. Copy that HTTPS URL** (e.g., `https://abc123-xy.ngrok-free.app`)
 
-**5. In Claude Desktop, configure the MCP server:**
+---
 
-Open Claude Desktop settings and add:
-```json
-{
-  "mcpServers": {
-    "clinical-trials": {
-      "url": "https://abc123-xy.ngrok-free.app/sse"
-    }
-  }
-}
-```
+### Step 2: Configure Claude Desktop
 
-**6. Restart Claude Desktop**
+**1. Install Claude Desktop:**
+- Download from: https://claude.ai/download
+- Install and sign in with your Claude Pro account
+
+**2. Add Custom Connector:**
+- Open **Claude Desktop**
+- Go to **Settings** → **Connectors**
+- Click **Add Custom Connector**
+- Enter the following:
+  - **Name:** `clinical-trials` (or any name you prefer)
+  - **URL:** `https://abc123-xy.ngrok-free.app/sse` (your ngrok HTTPS URL + `/sse`)
+- Click **Add**
+
+**3. Enable the Connector:**
+- The connector will appear in your Connectors list
+- **Toggle it ON** to enable
+- The connector is now ready to use
+
+**4. Start Querying:**
+- Open a new conversation in Claude Desktop
+- The MCP server tools will be available
+- Try: "Search for Phase 2 diabetes trials"
 
 ---
 
