@@ -147,7 +147,6 @@ At runtime (`src/vectorstore.py`), the vector store provides:
 - **Sample size**: 10,000 clinical trials
 - **Total chunks**: ~10,000+ (varies by document length)
 - **Embedding speed**: Dependent on GPU count and model
-- **Memory per GPU**: ~2-4GB for model + embeddings
 
 ### Querying
 - **Index type**: HNSW (approximate nearest neighbor)
