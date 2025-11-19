@@ -14,7 +14,7 @@ services:
               capabilities: [gpu]
     environment:
       PYTHONUNBUFFERED: 1
-      DATABASE_URL: postgresql://sid:sid_1234@172.17.0.1:5432/ctrialssynthpat
+      DATABASE_URL: postgresql://{user}:{password}@172.17.0.1:5432/ctrialssynthpat
       MILVUS_LOCALPATH: ${MILVUS_LOCALPATH}
       MILVUS_COLLECTION_NAME: clincaldocs
       ENABLE_SPARSE: ${ENABLE_SPARSE}
