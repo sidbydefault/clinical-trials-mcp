@@ -1,8 +1,8 @@
 import statistics
-from typing import Optional, List, Dict
-from dotenv import load_dotenv 
+from typing import Optional, Any
+from dotenv import load_dotenv
 
-from fastmcp import FastMCP 
+from fastmcp import FastMCP
 from fastmcp.tools.tool import ToolResult 
 
 load_dotenv()
@@ -10,7 +10,7 @@ load_dotenv()
 mcp = FastMCP("clinical-trial-recommendation-mcp")
 
 
-def parse_conditions(cond: str) -> List[str]:
+def parse_conditions(cond: str) -> list[str]:
     """Parse comma-separated condition string into list."""
     if not cond:
         return []
@@ -31,7 +31,7 @@ def search_trials(
     phase: Optional[str] = None,
     status: Optional[str] = None,
     min_enrollment: Optional[int] = None
-) -> Dict:
+) -> dict[str, Any]:
     """
     Search for clinical trials using semantic search with optional filters.
     
@@ -94,9 +94,9 @@ def search_trials(
 def find_eligible_patients(
     age_min: int,
     age_max: int,
-    required_conditions: Optional[List[str]] = None,
+    required_conditions: Optional[list[str]] = None,
     limit: int = 100
-) -> Dict:
+) -> dict[str, Any]:
     """
     Find patients matching eligibility criteria.
     
@@ -346,12 +346,12 @@ def analyze_trials_and_match_patients(
             f"Matched {len(patients)} patients (feasibility: {feasibility.get('feasibility_level', 'UNKNOWN')})."
         )
 
-        return ToolResult(content=[content], structured_content=result)
+        return ToolResult(content=content, structured_content=result)
     
     except Exception as e:
         error_msg = f"Analysis failed: {str(e)}"
         return ToolResult(
-            content=[error_msg],
+            content=error_msg,
             structured_content={
                 "error": error_msg,
                 "query": query
