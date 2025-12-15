@@ -79,14 +79,58 @@ Transforms clinical trial feasibility analysis from **weeks to seconds**:
 
 ### 1. Clone and Configure
 
+**Cloning this repository (includes large files tracked with Git LFS)**
+
+1. Install Git LFS (if not already installed):
+
+```bash
+# Debian / Ubuntu
+sudo apt update && sudo apt install -y git-lfs
+# macOS (Homebrew)
+brew install git-lfs
+# Windows: download and run the installer from https://git-lfs.github.com/
+```
+
+2. Enable Git LFS (local):
+
+```bash
+git lfs install --local
+```
+
+3. Clone the repo (HTTPS):
+
 ```bash
 git clone https://github.com/sidbydefault/clinical-trials-mcp.git
 cd clinical-trials-mcp
+```
+
+Or via SSH:
+
+```bash
+git clone git@github.com:sidbydefault/clinical-trials-mcp.git
+cd clinical-trials-mcp
+```
+
+4. Fetch LFS objects (if they don't download automatically):
+
+```bash
+git lfs pull
+```
+
+Notes:
+- The repository tracks large files (e.g., files under `data/raw` and `data/vector_database`) with Git LFS.
+- If you cloned this repo before a history rewrite (force-push), re-clone or run:
+
+```bash
+git fetch origin
+git reset --hard origin/main
+git lfs pull
+```
 
 # Create environment file
 cp .env.example .env
 # Edit .env and configure as needed
-```
+
 
 ### 2. Start Services
 
