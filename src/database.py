@@ -10,7 +10,7 @@ from sentence_transformers import SentenceTransformer
 
 
 class Database:
-    def __init__(self, embedding_model_name: str = "Alibaba-NLP/gte-multilingual-base"):
+    def __init__(self, embedding_model_name: str = "Qwen/Qwen3-Embedding-4B"):
         config = get_config()
         self.engine = create_engine(config.database.url)
 

@@ -8,7 +8,7 @@ from pathlib import Path
 from models import Patient, PatientCondition, AACTTrial
 
 load_dotenv()
-DATA_DIR=Path(r'D:\clinical-trials-mcp\data\raw')
+DATA_DIR=Path('/home/sid/clinical-trials-mcp/data/raw')
 
 def get_engine():
     """Get database engine"""

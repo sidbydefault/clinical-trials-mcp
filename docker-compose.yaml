@@ -14,8 +14,8 @@ services:
               capabilities: [gpu]
     environment:
       PYTHONUNBUFFERED: 1
-      DATABASE_URL: postgresql://{user}:{password}@172.17.0.1:5432/ctrialssynthpat
-      MILVUS_LOCALPATH: ${MILVUS_LOCALPATH}
+      DATABASE_URL: postgresql://sid:1234@172.17.0.1:5432/ctrialssynthpat
+      MILVUS_LOCALPATH: /home/sid/clinical-trials-mcp/data/vector_database/clincaldocs_milvus.db
       MILVUS_COLLECTION_NAME: clincaldocs
       ENABLE_SPARSE: ${ENABLE_SPARSE}
       HYBRID_RANKER: ${HYBRID_RANKER}
@@ -23,8 +23,8 @@ services:
       EMBEDDING_BATCH_SIZE: ${EMBEDDING_BATCH_SIZE}
       EMBEDDING_DIMENSION: ${EMBEDDING_DIMENSION}
     volumes:
-      - /mnt/clinical-trials-mcp/data/vector_database:/mnt/clinical-trials-mcp/data/vector_database
-      - /mnt/models:/mnt/models
+      - /home/sid/clinical-trials-mcp/data/vector_database:/home/sid/clinical-trials-mcp/data/vector_database
+      - /home/sid/.cache/huggingface:/root/.cache/huggingface  
     ports:
       - "8080:8080"
     command: ["uv", "run", "python", "run_server.py"]

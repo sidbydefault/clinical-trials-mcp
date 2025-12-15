@@ -11,7 +11,7 @@ from llama_index.vector_stores.milvus import MilvusVectorStore
 from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 from chunker import ClinicalTrialChunker
 
-def create_nodes(file_path: str, max_length: int = 4096, RANDOM_SEED: int = 42,SAMPLE_SIZE: int = 10000):
+def create_nodes(file_path: str, max_length: int = 4096, RANDOM_SEED: int = 42,SAMPLE_SIZE: int = 5000):
     """Create text nodes from clinical trial document."""
     with open(file_path, 'r') as f:
         data = json.load(f)
@@ -134,16 +134,16 @@ def embed_worker(args):
 
 
 def main():
-    MILVUS_DB_PATH = "/home/sid/vector_database/clincaldocs_milvus.db"
+    MILVUS_DB_PATH = "/home/sid/clinical-trials-mcp/data/vector_database/clincaldocs_milvus.db"
     MODEL_NAME = "Qwen/Qwen3-Embedding-4B"
     EMBEDDING_DIM = 2560
-    DEVICE_IDS = [1, 2, 3, 4, 5, 6, 7]
+    DEVICE_IDS = [0, 1]
     MAX_CHUNK_LENGTH = 4096
-    SAMPLE_SIZE = 10000
+    SAMPLE_SIZE = 5000
 
     
     nodes = create_nodes(
-        file_path="/home/sid/research_note_generation/sid/data_processing/notebooks/clinical_documents_with_metadata_final.json",
+        file_path="/home/sid/clinical-trials-mcp/data/raw/clinical_documents_with_metadata_final.json",
         max_length=MAX_CHUNK_LENGTH,
         RANDOM_SEED=42,
         SAMPLE_SIZE=SAMPLE_SIZE

@@ -21,13 +21,14 @@ class VectorStore:
         Settings.embed_model = self.embed_model
         Settings.llm = None
 
+        # Enable hybrid search with BM25
         self.vector_store = MilvusVectorStore(
             uri=config.vector_store.uri,
             collection_name=config.vector_store.collection_name,
             dim=config.vector_store.embedding_dim,
-            enable_sparse=config.vector_store.enable_sparse,
+            enable_sparse=True,
             sparse_embedding_function=BM25BuiltInFunction(),
-            hybrid_ranker=config.vector_store.hybrid_ranker,
+            hybrid_ranker="RRFRanker",
             overwrite=False,
         )
         storage_context = StorageContext.from_defaults(vector_store=self.vector_store)
@@ -46,14 +47,16 @@ class VectorStore:
             filters: Optional[Dict] = None,
             enrich_from_db: bool = True
             ):
+        
         query_engine = self.index.as_query_engine(
             vector_store_query_mode="hybrid",
             similarity_top_k=top_k,
             llm=None,
         )
         response = query_engine.query(query)
-        results =[]
-        nct_ids_to_fetch =set()
+        
+        results = []
+        nct_ids_to_fetch = set()
 
         for node in response.source_nodes:
             metadata = node.metadata
@@ -77,18 +80,17 @@ class VectorStore:
                 }
                 results.append(record)
 
-            if len(results)>= top_k:
+            if len(results) >= top_k:
                 break
-        
         
         if enrich_from_db and nct_ids_to_fetch:
             db = get_db()
             trial_data = db.get_trials_by_nct_ids(list(nct_ids_to_fetch))
 
-        enhanced_results =[] 
+        enhanced_results = [] 
 
         for r in results:
-            metadata =r.get("metadata")
+            metadata = r.get("metadata")
             nct_id = metadata.get("nct_id")
             full_text = trial_data[nct_id].get("text")
             conditions = trial_data[nct_id].get("conditions")
@@ -105,6 +107,7 @@ class VectorStore:
         if hasattr(self, "embed_model") and torch.cuda.is_available():
             torch.cuda.empty_cache()
 
+
 _vector_store_instance: Optional[VectorStore] = None
 
 def get_vector_store() -> VectorStore:
@@ -113,7 +116,3 @@ def get_vector_store() -> VectorStore:
     if _vector_store_instance is None:
         _vector_store_instance = VectorStore()
     return _vector_store_instance
-
-        
-            
-
